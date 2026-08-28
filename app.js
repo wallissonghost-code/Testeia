@@ -14,27 +14,35 @@ const scene = {
   lastCreatedIds: [],
   lastWinnerId: null,
   lastSelectionIds: [],
-  commandHistory: []
+  commandHistory: [],
+  collisionRules: []
 };
 
-const AI_ENDPOINT = window.TESTEIA_AI_ENDPOINT || '';
+const AI_ENDPOINT = window.TESTEIA_AI_ENDPOINT || '/api/interpret';
 
 const COLORS = {
-  vermelho: '#ff4d5a', vermelhos: '#ff4d5a', vermelha: '#ff4d5a', vermelhas: '#ff4d5a', red: '#ff4d5a',
-  azul: '#4d8dff', azuis: '#4d8dff', blue: '#4d8dff',
-  verde: '#38d996', verdes: '#38d996', green: '#38d996',
-  amarelo: '#ffd84d', amarelos: '#ffd84d', yellow: '#ffd84d',
-  roxo: '#a56cff', roxos: '#a56cff', purple: '#a56cff',
-  rosa: '#ff69b4', rosas: '#ff69b4', pink: '#ff69b4',
-  branco: '#f4f7fb', brancos: '#f4f7fb', white: '#f4f7fb',
-  preto: '#111318', pretos: '#111318', black: '#111318',
-  laranja: '#ff9c42', laranjas: '#ff9c42', orange: '#ff9c42'
+  vermelho:'#ff4d5a', red:'#ff4d5a',
+  azul:'#4d8dff', blue:'#4d8dff',
+  verde:'#38d996', green:'#38d996',
+  amarelo:'#ffd84d', yellow:'#ffd84d',
+  roxo:'#a56cff', purple:'#a56cff',
+  rosa:'#ff69b4', pink:'#ff69b4',
+  branco:'#f4f7fb', white:'#f4f7fb',
+  preto:'#111318', black:'#111318',
+  laranja:'#ff9c42', orange:'#ff9c42'
 };
 
+const COLOR_WORDS = [
+  ['vermelh', '#ff4d5a'], ['azul', '#4d8dff'], ['verde', '#38d996'],
+  ['amarel', '#ffd84d'], ['rox', '#a56cff'], ['rosa', '#ff69b4'],
+  ['branc', '#f4f7fb'], ['pret', '#111318'], ['laranj', '#ff9c42']
+];
+
 const NUMBERS = {
-  um:1, uma:1, dois:2, duas:2, tres:3, três:3, quatro:4, cinco:5, seis:6, sete:7, oito:8, nove:9, dez:10,
-  onze:11, doze:12, treze:13, quatorze:14, catorze:14, quinze:15, dezesseis:16, dezassete:17, dezessete:17,
-  dezoito:18, dezenove:19, vinte:20
+  um:1, uma:1, dois:2, duas:2, tres:3, três:3, quatro:4, cinco:5,
+  seis:6, sete:7, oito:8, nove:9, dez:10, onze:11, doze:12,
+  treze:13, quatorze:14, catorze:14, quinze:15, dezesseis:16,
+  dezessete:17, dezoito:18, dezenove:19, vinte:20
 };
 
 function resize() {
@@ -60,10 +68,15 @@ function extractNumber(text, fallback = 1) {
   return fallback;
 }
 
+function colorToHex(value) {
+  if (!value) return null;
+  if (/^#[0-9a-f]{6}$/i.test(value)) return value;
+  const key = String(value).toLowerCase().trim();
+  return COLORS[key] || null;
+}
+
 function extractColor(text) {
-  for (const [word, value] of Object.entries(COLORS)) {
-    if (new RegExp(`\\b${word}\\b`).test(text)) return value;
-  }
+  for (const [part, hex] of COLOR_WORDS) if (text.includes(part)) return hex;
   return null;
 }
 
@@ -74,28 +87,48 @@ function randomColor() {
 
 function snapshotScene() {
   return {
-    objects: scene.objects.map(o => ({ id:o.id, type:o.type, color:o.color, x:Math.round(o.x), y:Math.round(o.y), radius:o.radius })),
-    lastCreatedIds: [...scene.lastCreatedIds],
-    lastWinnerId: scene.lastWinnerId,
-    raceActive: !!scene.race?.active
+    objects: scene.objects.map(o => ({
+      id:o.id, type:o.type, color:o.color, group:o.group || null,
+      x:Math.round(o.x), y:Math.round(o.y), radius:o.radius
+    })),
+    lastCreatedIds:[...scene.lastCreatedIds],
+    lastWinnerId:scene.lastWinnerId,
+    raceActive:!!scene.race?.active,
+    recentCommands:scene.commandHistory.slice(-8)
   };
 }
 
-function spawnPoints(count = 1, color = null) {
+function positionFor(direction = 'center', index = 0, total = 1) {
   const w = canvas.clientWidth, h = canvas.clientHeight;
+  let x = w / 2, y = h / 2;
+  if (direction === 'left') x = 75;
+  if (direction === 'right') x = w - 75;
+  if (direction === 'top') y = 75;
+  if (direction === 'bottom') y = h - 75;
+  const spread = Math.min(52, Math.max(30, h / Math.max(total + 1, 2)));
+  if (direction === 'left' || direction === 'right') {
+    y = h / 2 + (index - (total - 1) / 2) * spread;
+  } else {
+    x = w / 2 + (index - (total - 1) / 2) * spread;
+  }
+  return {
+    x:Math.max(24, Math.min(w - 24, x)),
+    y:Math.max(24, Math.min(h - 24, y))
+  };
+}
+
+function spawnPoints(count = 1, color = null, group = null, direction = 'center') {
   const ids = [];
-  const columns = Math.ceil(Math.sqrt(count));
+  const finalColor = colorToHex(color) || color || null;
   for (let i = 0; i < count; i++) {
     const id = scene.nextId++;
-    const radius = 14;
-    const row = Math.floor(i / columns);
-    const col = i % columns;
-    const spacingX = Math.min(70, Math.max(36, (w - 100) / Math.max(columns, 1)));
-    const spacingY = 52;
-    const groupWidth = Math.min((columns - 1) * spacingX, Math.max(0, w - 100));
-    const x = Math.max(35, w * 0.5 - groupWidth * 0.5 + col * spacingX);
-    const y = Math.max(45, h * 0.45 + (row - Math.floor((count - 1) / columns) / 2) * spacingY);
-    scene.objects.push({ id, type:'point', x, y, radius, color:color || randomColor(), vx:0, vy:0, label:String(id), racing:false, finished:false });
+    const pos = positionFor(direction || 'center', i, count);
+    scene.objects.push({
+      id, type:'point', x:pos.x, y:pos.y, radius:14,
+      color:finalColor || randomColor(), group:group || null,
+      vx:0, vy:0, label:String(id), racing:false, finished:false,
+      speedMultiplier:1, behavior:null
+    });
     ids.push(id);
   }
   scene.lastCreatedIds = ids;
@@ -103,40 +136,35 @@ function spawnPoints(count = 1, color = null) {
   return ids;
 }
 
+function matchesSelector(o, selector) {
+  if (!selector || selector === 'all') return true;
+  if (selector === 'winner') return o.id === scene.lastWinnerId;
+  if (selector === 'last-created') return scene.lastCreatedIds.includes(o.id);
+  if (selector === 'selection') return scene.lastSelectionIds.includes(o.id);
+  if (selector.startsWith('ordinal:')) {
+    const n = Number(selector.split(':')[1]);
+    return scene.objects[n - 1]?.id === o.id;
+  }
+  if (selector.startsWith('id:')) return o.id === Number(selector.split(':')[1]);
+  if (selector.startsWith('group:')) {
+    return String(o.group || '').toLowerCase() === selector.slice(6).toLowerCase();
+  }
+  if (selector.startsWith('color:')) {
+    const raw = selector.slice(6);
+    const hex = colorToHex(raw) || raw;
+    return String(o.color).toLowerCase() === String(hex).toLowerCase();
+  }
+  return false;
+}
+
 function resolveTargets(target = 'last-created', ordinal = null) {
   if (!scene.objects.length) return [];
   if (ordinal != null) return scene.objects[ordinal - 1] ? [scene.objects[ordinal - 1]] : [];
-  if (target === 'all') return [...scene.objects];
-  if (target === 'winner' && scene.lastWinnerId) return scene.objects.filter(o => o.id === scene.lastWinnerId);
-  if (target === 'last-created') return scene.objects.filter(o => scene.lastCreatedIds.includes(o.id));
-  if (target === 'selection') return scene.objects.filter(o => scene.lastSelectionIds.includes(o.id));
-  return scene.lastCreatedIds.length ? scene.objects.filter(o => scene.lastCreatedIds.includes(o.id)) : [...scene.objects];
+  return scene.objects.filter(o => matchesSelector(o, target));
 }
 
-function targetFromText(text) {
-  if (/vencedor|ganhou|ganhador/.test(text)) return { target:'winner' };
-  if (/primeir[oa]/.test(text)) return { target:'ordinal', ordinal:1 };
-  if (/segund[oa]/.test(text)) return { target:'ordinal', ordinal:2 };
-  if (/terceir[oa]/.test(text)) return { target:'ordinal', ordinal:3 };
-  if (/quart[oa]/.test(text)) return { target:'ordinal', ordinal:4 };
-  if (/ultim[oa]/.test(text)) return { target:'ordinal', ordinal:scene.objects.length };
-  if (/eles|elas|todos|todas|pontos|bolinhas|bolas/.test(text)) return { target:'all' };
-  return { target:'last-created' };
-}
-
-function positionFor(direction, index = 0, total = 1) {
-  const w = canvas.clientWidth, h = canvas.clientHeight;
-  let x = w / 2, y = h / 2;
-  if (direction === 'left') x = 60;
-  if (direction === 'right') x = w - 60;
-  if (direction === 'top') y = 60;
-  if (direction === 'bottom') y = h - 60;
-  const offset = (index - (total - 1)/2) * Math.min(50, w / Math.max(total + 1, 2));
-  return { x:Math.max(24, Math.min(w - 24, x + offset)), y:Math.max(24, Math.min(h - 24, y)) };
-}
-
-function startRace(targets = scene.objects.filter(o => o.type === 'point')) {
-  const racers = targets.filter(o => o.type === 'point');
+function startRace(targets) {
+  const racers = (targets?.length ? targets : scene.objects).filter(o => o.type === 'point');
   if (racers.length < 2) {
     say('Preciso de pelo menos 2 pontos para uma corrida.');
     return false;
@@ -152,11 +180,11 @@ function startRace(targets = scene.objects.filter(o => o.type === 'point')) {
     o.vy = 0;
     o.racing = true;
     o.finished = false;
+    o.behavior = null;
   });
-  scene.race = { active:true, finishX, startedAt:performance.now(), finishers:[], racerIds:racers.map(o => o.id) };
+  scene.race = { active:true, finishX, finishers:[], racerIds:racers.map(o => o.id) };
   scene.lastWinnerId = null;
   winnerEl.hidden = true;
-  statusEl.textContent = `Corrida iniciada com ${racers.length} competidores`;
   return true;
 }
 
@@ -166,16 +194,18 @@ function executeAction(action) {
 
   if (type === 'spawn') {
     const count = Math.max(1, Math.min(Number(action.count || 1), 100));
-    spawnPoints(count, action.color || null);
-    say(`${count} ponto${count > 1 ? 's criados' : ' criado'}.`);
+    spawnPoints(count, action.color, action.group, action.direction || 'center');
+    say(`${count} ponto${count > 1 ? 's criados' : ' criado'}${action.group ? ` no grupo ${action.group}` : ''}.`);
     return true;
   }
 
-  const targets = resolveTargets(action.target || 'last-created', action.ordinal || null);
+  const target = action.target || 'last-created';
+  const ordinal = action.ordinal || (target.startsWith?.('ordinal:') ? Number(target.split(':')[1]) : null);
+  const targets = resolveTargets(target, ordinal);
 
   if (type === 'color') {
-    if (!targets.length || !action.color) return false;
-    targets.forEach(o => o.color = action.color);
+    if (!targets.length) return false;
+    targets.forEach(o => o.color = action.color === 'random' ? randomColor() : (colorToHex(action.color) || action.color || randomColor()));
     scene.lastSelectionIds = targets.map(o => o.id);
     say(`Cor alterada em ${targets.length} objeto${targets.length > 1 ? 's' : ''}.`);
     return true;
@@ -191,7 +221,7 @@ function executeAction(action) {
 
   if (type === 'scale') {
     if (!targets.length) return false;
-    const factor = Number(action.factor || 1.8);
+    const factor = Math.max(.1, Math.min(Number(action.factor || 1.8), 5));
     targets.forEach(o => o.radius = Math.max(5, Math.min(60, o.radius * factor)));
     scene.lastSelectionIds = targets.map(o => o.id);
     say('Tamanho alterado.');
@@ -200,21 +230,51 @@ function executeAction(action) {
 
   if (type === 'speed') {
     if (!targets.length) return false;
-    const factor = Math.max(0.1, Math.min(Number(action.factor || 1), 5));
-    targets.forEach(o => { o.speedMultiplier = factor; });
+    const factor = Math.max(.1, Math.min(Number(action.factor || 1), 5));
+    targets.forEach(o => o.speedMultiplier = factor);
     scene.lastSelectionIds = targets.map(o => o.id);
-    say(`Velocidade relativa definida para ${factor.toFixed(1)}x.`);
+    say(`Velocidade definida para ${factor.toFixed(1)}x.`);
     return true;
   }
 
   if (type === 'race') {
-    const raceTargets = action.target === 'last-created' ? resolveTargets('last-created') : scene.objects;
-    if (startRace(raceTargets)) say(`Corrida iniciada com ${raceTargets.length} competidores.`);
+    const racers = resolveTargets(action.target || 'all', action.ordinal || null);
+    if (startRace(racers)) say(`Corrida iniciada com ${racers.length} competidores.`);
+    return true;
+  }
+
+  if (type === 'chase') {
+    if (!targets.length || !action.otherTarget) return false;
+    targets.forEach(o => {
+      o.racing = false;
+      o.behavior = { type:'chase', targetSelector:action.otherTarget };
+    });
+    scene.lastSelectionIds = targets.map(o => o.id);
+    say(`${targets.length} objeto${targets.length > 1 ? 's estão' : ' está'} perseguindo o alvo.`);
+    return true;
+  }
+
+  if (type === 'stop') {
+    if (!targets.length) return false;
+    targets.forEach(o => { o.behavior = null; o.racing = false; o.vx = 0; o.vy = 0; });
+    say('Movimento interrompido.');
+    return true;
+  }
+
+  if (type === 'collision_rule') {
+    if (!action.otherTarget) return false;
+    scene.collisionRules.push({
+      target,
+      otherTarget:action.otherTarget,
+      effectColor:action.effectColor || action.color || 'random',
+      touched:new Set()
+    });
+    say('Regra de colisão criada.');
     return true;
   }
 
   if (type === 'remove') {
-    if (action.target === 'all') { clearWorld(); return true; }
+    if (target === 'all') { clearWorld(); return true; }
     if (!targets.length) return false;
     const ids = new Set(targets.map(o => o.id));
     scene.objects = scene.objects.filter(o => !ids.has(o.id));
@@ -233,99 +293,65 @@ function executeAction(action) {
 function localPlan(raw) {
   const text = normalize(raw);
   const actions = [];
-  const clauses = text.split(/\b(?:e depois|depois|entao|então|e)\b/).map(x => x.trim()).filter(Boolean);
 
-  for (const clause of clauses) {
-    const targetInfo = targetFromText(clause);
-    const target = targetInfo.target === 'ordinal' ? 'last-created' : targetInfo.target;
-    const ordinal = targetInfo.ordinal || null;
-    const color = extractColor(clause);
+  if (/apaga tudo|apague tudo|limpa tudo|limpe tudo|limpar mundo/.test(text)) return [{type:'clear'}];
 
-    if (/apaga tudo|apague tudo|limpa tudo|limpe tudo|limpar mundo/.test(clause)) {
-      actions.push({ type:'clear' });
-      continue;
-    }
+  if (/(cria|crie|coloca|coloque|adiciona|adicione|apareca|apareça|gere|gera)/.test(text) &&
+      /(ponto|bolinha|bola|circulo|círculo)/.test(text)) {
+    actions.push({ type:'spawn', count:extractNumber(text,1), color:extractColor(text) });
+  }
 
-    if (/(cria|crie|coloca|coloque|adiciona|adicione|apareca|apareça|surja|gere|gera)/.test(clause) && /(ponto|bolinha|bola|circulo|círculo)/.test(clause)) {
-      actions.push({ type:'spawn', count:extractNumber(clause, 1), color });
-      continue;
-    }
+  if (/corrida|correr|corram|corra|disput/.test(text)) actions.push({type:'race', target:'all'});
 
-    if (/corrida|correr|corram|corra|disput/.test(clause)) {
-      actions.push({ type:'race', target:'all' });
-      continue;
-    }
+  if (/persegue|persiga|seguir|siga/.test(text)) {
+    const red = /vermelh/.test(text), blue = /azul/.test(text);
+    if (red && blue) actions.push({type:'chase', target:'color:vermelho', otherTarget:'color:azul'});
+  }
 
-    if (color && /(deixa|deixe|fica|fique|cor|pinta|pinte|torna|torne)/.test(clause)) {
-      actions.push({ type:'color', target, ordinal, color });
-      continue;
-    }
+  if (/encost|colid|bater/.test(text) && /muda|troca/.test(text)) {
+    const red = /vermelh/.test(text), blue = /azul/.test(text);
+    actions.push({
+      type:'collision_rule',
+      target:red ? 'color:vermelho' : 'selection',
+      otherTarget:blue ? 'color:azul' : 'all',
+      effectColor:extractColor(text) || 'random'
+    });
+  }
 
-    if (/duas vezes mais rapid|2x mais rapid|dobro da velocidade/.test(clause)) {
-      actions.push({ type:'speed', target, ordinal, factor:2 });
-      continue;
-    }
-
-    if (/mais rapid/.test(clause)) {
-      actions.push({ type:'speed', target, ordinal, factor:1.5 });
-      continue;
-    }
-
-    if (/mais lent/.test(clause)) {
-      actions.push({ type:'speed', target, ordinal, factor:0.6 });
-      continue;
-    }
-
-    if (/gigante|maior|aumenta|aumente|cresca|cresça/.test(clause)) {
-      actions.push({ type:'scale', target, ordinal, factor:1.8 });
-      continue;
-    }
-
-    if (/menor|diminui|diminua|encolh/.test(clause)) {
-      actions.push({ type:'scale', target, ordinal, factor:0.6 });
-      continue;
-    }
-
-    if (/(move|mova|leva|leve|vai|vá|coloca|coloque)/.test(clause) && /(esquerda|direita|centro|meio|cima|baixo|topo)/.test(clause)) {
-      let direction = 'center';
-      if (/esquerda/.test(clause)) direction = 'left';
-      if (/direita/.test(clause)) direction = 'right';
-      if (/cima|topo/.test(clause)) direction = 'top';
-      if (/baixo/.test(clause)) direction = 'bottom';
-      actions.push({ type:'move', target, ordinal, direction });
-      continue;
-    }
-
-    if (/apaga|apague|remove|remova/.test(clause)) {
-      actions.push({ type:'remove', target, ordinal });
+  if (!actions.length) {
+    const color = extractColor(text);
+    if (color && /(deixa|deixe|fica|fique|pinta|pinte)/.test(text)) {
+      const ordinal = /primeir/.test(text) ? 1 : /segund/.test(text) ? 2 : /terceir/.test(text) ? 3 : null;
+      actions.push({type:'color', target:ordinal ? `ordinal:${ordinal}` : 'last-created', color});
     }
   }
 
-  if (!actions.some(a => a.type === 'race') && /corrida|correr|corram|corra/.test(text)) actions.push({ type:'race', target:'all' });
   return actions;
 }
 
 function validateActions(actions) {
-  const allowed = new Set(['spawn','color','move','scale','speed','race','remove','clear']);
-  return (Array.isArray(actions) ? actions : []).filter(a => a && allowed.has(a.type)).slice(0, 20);
+  const allowed = new Set(['spawn','color','move','scale','speed','race','remove','clear','chase','stop','collision_rule']);
+  return (Array.isArray(actions) ? actions : [])
+    .filter(a => a && allowed.has(a.type))
+    .slice(0, 24);
 }
 
 async function remotePlan(command) {
-  if (!AI_ENDPOINT) return null;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 5000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const response = await fetch(AI_ENDPOINT, {
       method:'POST',
-      headers:{ 'Content-Type':'application/json' },
-      body:JSON.stringify({ command, scene:snapshotScene() }),
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({command, scene:snapshotScene()}),
       signal:controller.signal
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json();
-    return validateActions(data.actions);
+    const actions = validateActions(data.actions);
+    return { actions, reply:data.reply || '' };
   } catch (error) {
-    console.warn('TesteIA: backend de IA indisponível; usando interpretação local.', error);
+    console.warn('TesteIA: IA remota indisponível; usando modo local.', error);
     return null;
   } finally {
     clearTimeout(timer);
@@ -338,10 +364,10 @@ async function interpretAndExecute(raw) {
   log('Você', raw);
   scene.commandHistory.push(raw);
   scene.commandHistory = scene.commandHistory.slice(-20);
-  statusEl.textContent = 'Entendendo comando…';
+  statusEl.textContent = 'IA interpretando…';
 
-  const aiActions = await remotePlan(raw);
-  const actions = validateActions(aiActions?.length ? aiActions : localPlan(raw));
+  const remote = await remotePlan(raw);
+  const actions = validateActions(remote?.actions?.length ? remote.actions : localPlan(raw));
 
   if (!actions.length) {
     say('Não consegui transformar esse pedido em uma ação ainda.');
@@ -350,7 +376,70 @@ async function interpretAndExecute(raw) {
 
   let executed = 0;
   for (const action of actions) if (executeAction(action)) executed++;
-  if (!executed) say('Entendi a intenção, mas não encontrei objetos compatíveis para executar.');
+  if (remote?.reply) log('IA', remote.reply);
+  if (!executed) say('Entendi o pedido, mas não encontrei objetos compatíveis para executar.');
+}
+
+function updateRace(dt) {
+  if (!scene.race?.active) return;
+  const finishX = scene.race.finishX;
+  const racers = scene.objects.filter(o => scene.race.racerIds.includes(o.id));
+  for (const o of racers) {
+    if (!o.racing || o.finished) continue;
+    const wobble = Math.sin(performance.now() * .01 + o.id) * 8;
+    o.x += (o.vx * (o.speedMultiplier || 1) + wobble) * dt;
+    if (o.x >= finishX) {
+      o.x = finishX;
+      o.finished = true;
+      o.racing = false;
+      scene.race.finishers.push(o.id);
+      if (!scene.lastWinnerId) {
+        scene.lastWinnerId = o.id;
+        scene.lastSelectionIds = [o.id];
+        winnerEl.textContent = `🏆 Ponto ${o.id} venceu!`;
+        winnerEl.hidden = false;
+        say(`Ponto ${o.id} venceu a corrida!`);
+      }
+    }
+  }
+  if (scene.race.finishers.length === racers.length) scene.race.active = false;
+}
+
+function updateBehaviors(dt) {
+  for (const o of scene.objects) {
+    if (o.racing || o.behavior?.type !== 'chase') continue;
+    const candidates = resolveTargets(o.behavior.targetSelector).filter(t => t.id !== o.id);
+    if (!candidates.length) continue;
+    let target = candidates[0], best = Infinity;
+    for (const c of candidates) {
+      const d = (c.x-o.x)**2 + (c.y-o.y)**2;
+      if (d < best) { best = d; target = c; }
+    }
+    const dx = target.x - o.x, dy = target.y - o.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    const speed = 90 * (o.speedMultiplier || 1);
+    if (dist > o.radius + target.radius) {
+      o.x += dx / dist * speed * dt;
+      o.y += dy / dist * speed * dt;
+    }
+  }
+}
+
+function updateCollisions() {
+  for (const rule of scene.collisionRules) {
+    const actors = resolveTargets(rule.target);
+    const others = resolveTargets(rule.otherTarget);
+    for (const a of actors) for (const b of others) {
+      if (a.id === b.id) continue;
+      const key = `${a.id}:${b.id}`;
+      const touching = Math.hypot(a.x-b.x, a.y-b.y) <= a.radius + b.radius;
+      if (touching && !rule.touched.has(key)) {
+        a.color = rule.effectColor === 'random' ? randomColor() : (colorToHex(rule.effectColor) || rule.effectColor);
+        rule.touched.add(key);
+      }
+      if (!touching) rule.touched.delete(key);
+    }
+  }
 }
 
 function clearWorld() {
@@ -359,6 +448,7 @@ function clearWorld() {
   scene.lastSelectionIds = [];
   scene.lastWinnerId = null;
   scene.race = null;
+  scene.collisionRules = [];
   winnerEl.hidden = true;
   statusEl.textContent = 'Mundo limpo.';
   log('TesteIA', 'Mundo limpo.');
@@ -379,35 +469,9 @@ function log(who, message) {
   historyEl.scrollTop = historyEl.scrollHeight;
 }
 
-function update(dt) {
-  if (!scene.race?.active) return;
-  const finishX = scene.race.finishX;
-  const racers = scene.objects.filter(o => scene.race.racerIds.includes(o.id));
-  for (const o of racers) {
-    if (!o.racing || o.finished) continue;
-    const multiplier = o.speedMultiplier || 1;
-    const wobble = Math.sin(performance.now() * 0.01 + o.id) * 8;
-    o.x += (o.vx * multiplier + wobble) * dt;
-    if (o.x >= finishX) {
-      o.x = finishX;
-      o.finished = true;
-      o.racing = false;
-      scene.race.finishers.push(o.id);
-      if (!scene.lastWinnerId) {
-        scene.lastWinnerId = o.id;
-        scene.lastSelectionIds = [o.id];
-        winnerEl.textContent = `🏆 Ponto ${o.id} venceu!`;
-        winnerEl.hidden = false;
-        say(`Ponto ${o.id} venceu a corrida!`);
-      }
-    }
-  }
-  if (scene.race.finishers.length === racers.length) scene.race.active = false;
-}
-
 function draw() {
   const w = canvas.clientWidth, h = canvas.clientHeight;
-  ctx.clearRect(0, 0, w, h);
+  ctx.clearRect(0,0,w,h);
 
   if (scene.race) {
     ctx.save();
@@ -415,13 +479,13 @@ function draw() {
     ctx.strokeStyle = 'rgba(255,255,255,.65)';
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(scene.race.finishX, 20);
-    ctx.lineTo(scene.race.finishX, h - 20);
+    ctx.moveTo(scene.race.finishX,20);
+    ctx.lineTo(scene.race.finishX,h-20);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.fillStyle = 'rgba(255,255,255,.7)';
     ctx.font = '11px system-ui';
-    ctx.fillText('CHEGADA', Math.max(5, scene.race.finishX - 27), 16);
+    ctx.fillText('CHEGADA',Math.max(5,scene.race.finishX-27),16);
     ctx.restore();
   }
 
@@ -431,26 +495,33 @@ function draw() {
     ctx.shadowBlur = 18;
     ctx.fillStyle = o.color;
     ctx.beginPath();
-    ctx.arc(o.x, o.y, o.radius, 0, Math.PI * 2);
+    ctx.arc(o.x,o.y,o.radius,0,Math.PI*2);
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.strokeStyle = 'rgba(255,255,255,.55)';
     ctx.lineWidth = 2;
     ctx.stroke();
     ctx.fillStyle = '#fff';
-    ctx.font = `700 ${Math.max(9, o.radius * .72)}px system-ui`;
+    ctx.font = `700 ${Math.max(9,o.radius*.72)}px system-ui`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(o.label, o.x, o.y + .5);
+    ctx.fillText(o.label,o.x,o.y+.5);
+    if (o.group) {
+      ctx.font = '10px system-ui';
+      ctx.fillStyle = 'rgba(255,255,255,.75)';
+      ctx.fillText(o.group,o.x,o.y+o.radius+12);
+    }
     ctx.restore();
   }
 }
 
 let last = performance.now();
 function loop(now) {
-  const dt = Math.min((now - last) / 1000, .033);
+  const dt = Math.min((now-last)/1000,.033);
   last = now;
-  update(dt);
+  updateRace(dt);
+  updateBehaviors(dt);
+  updateCollisions();
   draw();
   requestAnimationFrame(loop);
 }
@@ -462,15 +533,13 @@ form.addEventListener('submit', async e => {
   if (!value) return;
   input.value = '';
   input.disabled = true;
-  try {
-    await interpretAndExecute(value);
-  } finally {
-    input.disabled = false;
-    input.focus();
-  }
+  try { await interpretAndExecute(value); }
+  finally { input.disabled = false; input.focus(); }
 });
 
 clearBtn.addEventListener('click', clearWorld);
-document.querySelectorAll('[data-command]').forEach(btn => btn.addEventListener('click', () => interpretAndExecute(btn.dataset.command)));
+document.querySelectorAll('[data-command]').forEach(btn =>
+  btn.addEventListener('click', () => interpretAndExecute(btn.dataset.command))
+);
 
-log('TesteIA', 'Pronto. Eu transformo seus pedidos em ações dentro deste mundo.');
+log('TesteIA', 'Pronto. A IA pode criar, mover, organizar, perseguir, competir e reagir a colisões.');
