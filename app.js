@@ -17,8 +17,6 @@ const scene = {
   commandHistory: []
 };
 
-// Opcional: aponte para um backend seu que aceite { command, scene }
-// e devolva { actions: [...] }. Sem endpoint configurado, o interpretador local assume.
 const AI_ENDPOINT = window.TESTEIA_AI_ENDPOINT || '';
 
 const COLORS = {
@@ -105,13 +103,13 @@ function spawnPoints(count = 1, color = null) {
   return ids;
 }
 
-function resolveTargets(target = 'last', ordinal = null) {
+function resolveTargets(target = 'last-created', ordinal = null) {
   if (!scene.objects.length) return [];
+  if (ordinal != null) return scene.objects[ordinal - 1] ? [scene.objects[ordinal - 1]] : [];
   if (target === 'all') return [...scene.objects];
   if (target === 'winner' && scene.lastWinnerId) return scene.objects.filter(o => o.id === scene.lastWinnerId);
   if (target === 'last-created') return scene.objects.filter(o => scene.lastCreatedIds.includes(o.id));
   if (target === 'selection') return scene.objects.filter(o => scene.lastSelectionIds.includes(o.id));
-  if (ordinal != null) return scene.objects[ordinal - 1] ? [scene.objects[ordinal - 1]] : [];
   return scene.lastCreatedIds.length ? scene.objects.filter(o => scene.lastCreatedIds.includes(o.id)) : [...scene.objects];
 }
 
@@ -303,7 +301,6 @@ function localPlan(raw) {
     }
   }
 
-  // Frases compostas comuns sem conectivo explícito.
   if (!actions.some(a => a.type === 'race') && /corrida|correr|corram|corra/.test(text)) actions.push({ type:'race', target:'all' });
   return actions;
 }
