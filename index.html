@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no" />
+  <meta name="theme-color" content="#070b14" />
+  <title>TesteIA — Mundo por comando</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="topbar">
+      <div>
+        <strong>TesteIA</strong>
+        <span>Mundo 2D controlado por linguagem</span>
+      </div>
+      <button id="clearBtn" class="ghost">Limpar mundo</button>
+    </header>
+
+    <section class="world-wrap">
+      <canvas id="world"></canvas>
+      <div id="status" class="status">Pronto. Peça para criar algo.</div>
+      <div id="winner" class="winner" hidden></div>
+    </section>
+
+    <section class="console">
+      <div id="history" class="history" aria-live="polite"></div>
+      <form id="commandForm" class="command-row">
+        <input id="commandInput" autocomplete="off" placeholder="Ex.: Crie 2 pontos vermelhos e faça uma corrida" />
+        <button type="submit">Executar</button>
+      </form>
+      <div class="examples">
+        <button data-command="Crie um ponto">1 ponto</button>
+        <button data-command="Crie 2 pontos">2 pontos</button>
+        <button data-command="Faça eles apostarem uma corrida">Corrida</button>
+        <button data-command="Deixe o primeiro vermelho">Primeiro vermelho</button>
+      </div>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
