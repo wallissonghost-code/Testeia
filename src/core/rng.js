@@ -1,0 +1,6 @@
+import{FISH,RARITIES,fishByRarity}from'../config/fish-catalog.js';
+const ORDER=['common','uncommon','rare','epic','legendary','mythic'];
+export function rarityWeights(luck=0){const l=Math.max(0,Math.min(1.35,Number(luck)||0));const raw=ORDER.map((r,i)=>{const base=RARITIES[r].weight;const boost=i===0?Math.max(.18,1-l*.52):i===1?Math.max(.45,1-l*.25):1+l*(i*.32);return Math.max(.01,base*boost)});const sum=raw.reduce((a,b)=>a+b,0);return raw.map((w,i)=>({rarity:ORDER[i],weight:w/sum}))}
+export function pickWeighted(rows,random=Math.random()){let roll=Math.max(0,Math.min(.999999,random()));for(const row of rows){roll-=row.weight;if(roll<=0)return row}return rows[rows.length-1]}
+export function rollFish({luck=0,random=Math.random}={}){const rarity=pickWeighted(rarityWeights(luck),random).rarity;const pool=fishByRarity(rarity);return pool[Math.floor(random()*pool.length)]||FISH[0]}
+export function expectedScore(luck=0){return rarityWeights(luck).reduce((sum,row)=>{const pool=fishByRarity(row.rarity);const avg=pool.reduce((a,f)=>a+f.points,0)/pool.length;return sum+row.weight*avg},0)}

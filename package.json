@@ -1,0 +1,1 @@
+{"name":"live-fishing-rng","version":"0.1.0","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.mjs","qa":"node scripts/qa.mjs","ai:guard":"node scripts/ai-guardian.mjs","ci":"npm run test && npm run qa && npm run ai:guard"},"engines":{"node":">=20"}}

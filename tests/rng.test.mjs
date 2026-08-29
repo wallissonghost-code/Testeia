@@ -1,0 +1,2 @@
+import test from'node:test';import assert from'node:assert/strict';import{rarityWeights,rollFish,expectedScore}from'../src/core/rng.js';
+test('pesos RNG somam 1',()=>{const sum=rarityWeights(.7).reduce((a,r)=>a+r.weight,0);assert.ok(Math.abs(sum-1)<1e-9)});test('sorte aumenta valor esperado sem garantir máximo',()=>{assert.ok(expectedScore(1)>expectedScore(0));const top=rarityWeights(1.35).find(r=>r.rarity==='mythic');assert.ok(top.weight<.1)});test('rollFish sempre devolve peixe válido',()=>{for(const n of[0,.1,.5,.9,.999])assert.ok(rollFish({luck:.4,random:()=>n}).id)})

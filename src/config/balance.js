@@ -1,0 +1,3 @@
+export const BALANCE={activityWindowMs:180000,activityCap:40,commentLuckPerAction:.012,maxCommentLuck:.34,giftBaseLuck:.18,maxGiftLuck:1.15,maxTotalLuck:1.35,highlightRarities:new Set(['rare','epic','legendary','mythic']),maxFeed:8,maxRank:5};
+export function giftLuck(diamonds=0,count=1){const value=Math.max(0,Number(diamonds)||0)*Math.max(1,Number(count)||1);return Math.min(BALANCE.maxGiftLuck,BALANCE.giftBaseLuck+Math.log10(1+value)*.22)}
+export function activityLuck(actions=1){return Math.min(BALANCE.maxCommentLuck,Math.max(0,actions-1)*BALANCE.commentLuckPerAction)}
