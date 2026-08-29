@@ -1,14 +1,14 @@
-import{FishingEngine}from'./core/fishing-engine.js';
-import{LivePlusConnection,eventUser,giftMeta}from'./integrations/liveplus.js';
-import{HUD}from'./ui/hud.js';
-import{FishingScene}from'./ui/scene.js';
-import{SessionControls}from'./ui/session-controls.js';
+import{FishingEngine}from'./core/fishing-engine.js?v=0201';
+import{LivePlusConnection,eventUser,giftMeta}from'./integrations/liveplus.js?v=0201';
+import{HUD}from'./ui/hud.js?v=0201';
+import{FishingScene}from'./ui/scene.js?v=0201';
+import{SessionControls}from'./ui/session-controls.js?v=0201';
 
 let engine=new FishingEngine();
 const live=new LivePlusConnection(),hud=new HUD(engine),scene=new FishingScene(),session=new SessionControls();
 let stateTimer=null,paused=false,pendingCommands=[];
 
-function statePayload(){return{...engine.snapshot(),paused,pendingCommands:pendingCommands.length,session:{connected:live.connected,code:live.code||''},version:'0.2.0'}}
+function statePayload(){return{...engine.snapshot(),paused,pendingCommands:pendingCommands.length,session:{connected:live.connected,code:live.code||''},version:'0.2.1'}}
 function publishState(force=false){clearTimeout(stateTimer);const send=()=>live.sendState(statePayload());if(force)send();else stateTimer=setTimeout(send,100)}
 function handleCatch(payload){const result=engine.catch(payload);hud.onCatch(result);scene.enqueue(result);live.sendEvent({event:'fish_caught',user:result.user,fishId:result.fish.id,fishName:result.fish.name,rarity:result.fish.rarity,points:result.points,totalPoints:result.total,source:result.source,luck:Number(result.luck.toFixed(3))});publishState();return result}
 function resetSession(){engine=new FishingEngine();hud.engine=engine;hud.reset();pendingCommands=[];live.sendEvent({event:'session_reset'});publishState(true)}
